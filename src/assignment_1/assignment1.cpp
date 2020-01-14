@@ -217,11 +217,11 @@ SC_MODULE(CPU)
 {
 
 public:
-    sc_in<bool>                Port_CLK;
-    sc_in<Cache::RetCode>      Port_MemDone;
-    sc_out<Cache::Function>    Port_MemFunc;
-    sc_out<int>                Port_MemAddr;
-    sc_inout_rv<32>            Port_MemData;
+    sc_in<bool>             Port_CLK;
+    sc_in<Cache::RetCode>   Port_CacheDone;
+    sc_out<Cache::Function> Port_CacheFunc;
+    sc_out<int>             Port_CacheAddr;
+    sc_inout_rv<32>         Port_CacheData;
 
     SC_CTOR(CPU)
     {
@@ -233,7 +233,7 @@ public:
 private:
     void execute()
     {
-        TraceFile::Entry    tr_data;
+        TraceFile::Entry tr_data;
         Cache::Function  f;
 
         // Loop until end of tracefile
@@ -266,28 +266,28 @@ private:
 
             if(tr_data.type != TraceFile::ENTRY_TYPE_NOP)
             {
-                Port_MemAddr.write(tr_data.addr);
-                Port_MemFunc.write(f);
+                Port_CacheAddr.write(tr_data.addr);
+                Port_CacheFunc.write(f);
 
                 if (f == Cache::FUNC_WRITE)
                 {
                     cout << sc_time_stamp() << ": CPU sends write" << endl;
 
                     uint32_t data = rand();
-                    Port_MemData.write(data);
+                    Port_CacheData.write(data);
                     wait();
-                    Port_MemData.write("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ");
+                    Port_CacheData.write("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ");
                 }
                 else
                 {
                     cout << sc_time_stamp() << ": CPU sends read" << endl;
                 }
 
-                wait(Port_MemDone.value_changed_event());
+                wait(Port_CacheDone.value_changed_event());
 
                 if (f == Cache::FUNC_READ)
                 {
-                    cout << sc_time_stamp() << ": CPU reads: " << Port_MemData.read() << endl;
+                    cout << sc_time_stamp() << ": CPU reads: " << Port_CacheData.read() << endl;
                 }
             }
             else
@@ -319,24 +319,24 @@ int sc_main(int argc, char* argv[])
         CPU   cpu("cpu");
 
         // Signals
-        sc_buffer<Cache::Function> sigMemFunc;
-        sc_buffer<Cache::RetCode>  sigMemDone;
-        sc_signal<int>             sigMemAddr;
-        sc_signal_rv<32>           sigMemData;
+        sc_buffer<Cache::Function> sigCacheFunc;
+        sc_buffer<Cache::RetCode>  sigCacheDone;
+        sc_signal<int>             sigCacheAddr;
+        sc_signal_rv<32>           sigCacheData;
 
         // The clock that will drive the CPU and Cache
         sc_clock clk;
 
         // Connecting module ports with signals
-        cache.Port_Func(sigMemFunc);
-        cache.Port_Addr(sigMemAddr);
-        cache.Port_Data(sigMemData);
-        cache.Port_Done(sigMemDone);
+        cache.Port_Func(sigCacheFunc);
+        cache.Port_Addr(sigCacheAddr);
+        cache.Port_Data(sigCacheData);
+        cache.Port_Done(sigCacheDone);
 
-        cpu.Port_MemFunc(sigMemFunc);
-        cpu.Port_MemAddr(sigMemAddr);
-        cpu.Port_MemData(sigMemData);
-        cpu.Port_MemDone(sigMemDone);
+        cpu.Port_CacheFunc(sigCacheFunc);
+        cpu.Port_CacheAddr(sigCacheAddr);
+        cpu.Port_CacheData(sigCacheData);
+        cpu.Port_CacheDone(sigCacheDone);
 
         cache.Port_CLK(clk);
         cpu.Port_CLK(clk);
