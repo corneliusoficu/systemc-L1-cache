@@ -21,90 +21,9 @@
 using namespace std;
 using namespace sc_core; // This pollutes namespace, better: only import what you need.
 
-#define MEMORY_SIZE                  512
 #define CACHE_LINE_SIZE_BYTES        32
 #define CACHE_NUMBER_OF_LINES_IN_SET 8
 #define CACHE_NUMBER_OF_SETS         128
-
-// SC_MODULE(Memory)
-// {
-
-// public:
-//     enum Function
-//     {
-//         FUNC_READ,
-//         FUNC_WRITE
-//     };
-
-//     enum RetCode
-//     {
-//         RET_READ_DONE,
-//         RET_WRITE_DONE,
-//     };
-
-//     sc_in<bool>     Port_CLK;
-//     sc_in<Function> Port_Func;
-//     sc_in<int>      Port_Addr;
-//     sc_out<RetCode> Port_Done;
-//     sc_inout_rv<32> Port_Data;
-
-//     SC_CTOR(Memory)
-//     {
-//         SC_THREAD(execute);
-//         sensitive << Port_CLK.pos();
-//         dont_initialize();
-
-//         m_data = new int[MEMORY_SIZE];
-//     }
-
-//     ~Memory()
-//     {
-//         delete[] m_data;
-//     }
-
-// private:
-//     int* m_data;
-
-//     void execute()
-//     {
-//         while (true)
-//         {
-//             wait(Port_Func.value_changed_event());
-
-//             Function f = Port_Func.read();
-//             int addr   = Port_Addr.read();
-//             int data   = 0;
-//             if (f == FUNC_WRITE)
-//             {
-//                 cout << sc_time_stamp() << ": MEM received write" << endl;
-//                 data = Port_Data.read().to_int();
-//             }
-//             else
-//             {
-//                 cout << sc_time_stamp() << ": MEM received read" << endl;
-//             }
-
-//             // This simulates memory read/write delay
-//             wait(99);
-
-//             if (f == FUNC_READ)
-//             {
-//                 Port_Data.write( (addr < MEMORY_SIZE) ? m_data[addr] : 0 );
-//                 Port_Done.write( RET_READ_DONE );
-//                 wait();
-//                 Port_Data.write("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ");
-//             }
-//             else
-//             {
-//                 if (addr < MEMORY_SIZE)
-//                 {
-//                     m_data[addr] = data;
-//                 }
-//                 Port_Done.write( RET_WRITE_DONE );
-//             }
-//         }
-//     }
-// };
 
 SC_MODULE(Cache)
 {
@@ -216,6 +135,56 @@ private:
         return max_index;
     }
 
+    void handle_cache_read(int set_address, int tag, int byte_in_line)
+    {
+        int line_in_set_index = get_index_of_line_in_set(set_address, tag);
+                
+        if(line_in_set_index == -1)
+        {
+            stats_readmiss(0);
+            //simulate read from memory and store in cache
+            wait(99);
+            line_in_set_index = get_lru_line(set_address);
+            tags[set_address][line_in_set_index] = tag;
+            cache[set_address][line_in_set_index * CACHE_LINE_SIZE_BYTES + byte_in_line] = rand() % 1000 + 1;
+        }
+        else
+        {
+            update_lru(set_address, line_in_set_index);
+            stats_readhit(0);
+        }
+        
+        update_lru(set_address, line_in_set_index);
+        
+        Port_Data.write(cache[set_address][line_in_set_index * CACHE_LINE_SIZE_BYTES + byte_in_line]);
+        Port_Done.write(RET_READ_DONE);
+        
+        wait();
+        Port_Data.write("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ");
+    }
+
+    void handle_cache_write(int addr, int set_address, int tag, int byte_in_line, int data)
+    {
+        int line_in_set_index = get_index_of_line_in_set(set_address, tag);
+
+        if(line_in_set_index == -1)
+        {
+            stats_writemiss(0);
+            line_in_set_index = get_lru_line(set_address);
+            tags[set_address][line_in_set_index] = tag;
+            wait(99);
+        }
+        else
+        {
+            stats_writehit(0);
+            update_lru(set_address, line_in_set_index);
+            wait();
+        }
+
+        cache[set_address][line_in_set_index * CACHE_NUMBER_OF_LINES_IN_SET] = data;
+        Port_Done.write(RET_WRITE_DONE);
+    }
+
     void execute()
     {
         while (true)
@@ -229,48 +198,16 @@ private:
             int set_address  = (addr & bit_mask_set_address) >> 5; // Shifting to right to obtain value for bits 5  - 11
             int tag          = (addr & bit_mask_tag) >> 12;        // Shifting to right to obtain value for bits 12 - 31
 
-            int data   = 0;
             if (f == FUNC_WRITE)
             {
                 cout << sc_time_stamp() << ": MEM received write" << endl;
-                data = Port_Data.read().to_int();
+                int data = Port_Data.read().to_int();
+                handle_cache_write(addr, set_address, tag, byte_in_line, data);
             }
             else
             {
                 cout << sc_time_stamp() << ": MEM received read" << endl;
-            }
-
-            wait(99);
-
-            if (f == FUNC_READ)
-            {
-                int line_in_set_index = get_index_of_line_in_set(set_address, tag);
-                if(line_in_set_index == -1)
-                {
-                    stats_readmiss(0);
-                    //simulate read from memory and store in cache
-                    int line_index = get_lru_line(set_address);
-                    tags[set_address][line_index] = tag;
-                    cache[set_address][line_index * CACHE_LINE_SIZE_BYTES + byte_in_line] = rand() % 1000 + 1;
-                }
-                else
-                {
-                    update_lru(set_address, line_in_set_index);
-                    stats_readhit(0);
-                }
-                
-                Port_Data.write( 0 );
-                Port_Done.write( RET_READ_DONE );
-                wait();
-                Port_Data.write("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ");
-            }
-            else
-            {
-                if (addr < MEMORY_SIZE)
-                {
-                    // m_data[addr] = data;
-                }
-                Port_Done.write( RET_WRITE_DONE );
+                handle_cache_read(set_address, tag, byte_in_line);
             }
         }   
     }
@@ -309,27 +246,14 @@ private:
                 break;
             }
 
-            // To demonstrate the statistic functions, we generate a 50%
-            // probability of a 'hit' or 'miss', and call the statistic
-            // functions below
-            // int j = rand() % 2;
-
             switch(tr_data.type)
             {
                 case TraceFile::ENTRY_TYPE_READ:
                     f = Cache::FUNC_READ;
-                    // if(j)
-                    //     stats_readhit(0);
-                    // else
-                    //     stats_readmiss(0);
                     break;
 
                 case TraceFile::ENTRY_TYPE_WRITE:
                     f = Cache::FUNC_WRITE;
-                    // if(j)
-                    //     stats_writehit(0);
-                    // else
-                    //     stats_writemiss(0);
                     break;
 
                 case TraceFile::ENTRY_TYPE_NOP:
@@ -426,7 +350,6 @@ int sc_main(int argc, char* argv[])
         // Print statistics after simulation finished
         stats_print();
     }
-
     catch (exception& e)
     {
         cerr << e.what() << endl;
