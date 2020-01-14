@@ -14,6 +14,7 @@
 
 #include <systemc>
 #include <iostream>
+#include <stdlib.h>
 
 #include "psa.h"
 
@@ -138,33 +139,81 @@ public:
 
 private:
     
-    u_int8_t  **cache;
-    u_int16_t **tags;
+    int **cache;
+    int **tags;
+    int **least_recently_updated;
 
-    u_int32_t bit_mask_byte_in_line = create_mask(0,  4);
-    u_int32_t bit_mask_set_address  = create_mask(5, 15);
-    u_int32_t bit_mask_tag          = create_mask(16, 31);
+    int bit_mask_byte_in_line = create_mask(0,  4);
+    int bit_mask_set_address  = create_mask(5, 11);
+    int bit_mask_tag          = create_mask(12, 31);
 
     void initialize_cache_arrays()
     {
-        cache = new u_int8_t* [CACHE_NUMBER_OF_SETS];
-        tags  = new u_int16_t*[CACHE_NUMBER_OF_SETS]; 
+        cache                   = new int*[CACHE_NUMBER_OF_SETS];
+        tags                    = new int*[CACHE_NUMBER_OF_SETS]; 
+        least_recently_updated  = new int*[CACHE_NUMBER_OF_SETS];
 
         for(int i = 0; i < CACHE_NUMBER_OF_SETS; i++)
         {
-            cache[i] = new u_int8_t [CACHE_NUMBER_OF_LINES_IN_SET * CACHE_LINE_SIZE_BYTES];
-            tags[i]  = new u_int16_t[CACHE_NUMBER_OF_LINES_IN_SET];
+            least_recently_updated[i] = new int[CACHE_NUMBER_OF_LINES_IN_SET];
+            cache[i]                  = new int [CACHE_NUMBER_OF_LINES_IN_SET * CACHE_LINE_SIZE_BYTES];
+            tags[i]                   = new int[CACHE_NUMBER_OF_LINES_IN_SET];
+
+            for(int j = 0; j < CACHE_NUMBER_OF_LINES_IN_SET; j++)
+            {
+                tags[i][j] = -1;
+            }
         }
     }
 
-    u_int32_t create_mask(u_int8_t start_bit, u_int8_t end_bit)
+    int create_mask(int start_bit, int end_bit)
     {
-        u_int32_t mask = 0;
-        for(u_int8_t i  = start_bit; i <= end_bit; i++)
+        int mask = 0;
+        for(int i  = start_bit; i <= end_bit; i++)
         {
             mask |= 1 << i;
         }
         return mask;
+    }
+
+    int get_index_of_line_in_set(int set_index, int tag)
+    {
+        for(int index = 0; index < CACHE_NUMBER_OF_LINES_IN_SET; index++)
+        {
+            if(tags[set_index][index] == tag)
+            {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    void update_lru(int set_address, int line_in_set_index)
+    {
+        for(int i = 0; i < CACHE_NUMBER_OF_SETS; i++)
+        {
+            if(least_recently_updated[set_address][i] < least_recently_updated[set_address][line_in_set_index])
+            {
+                least_recently_updated[set_address][i]++;
+            }
+        }
+        least_recently_updated[set_address][line_in_set_index] = 0;
+    }
+
+    int get_lru_line(int set_address){ //returns index of the lru line
+        int max = 0;
+        int max_index = 0;
+
+        for(int i = 0; i < CACHE_NUMBER_OF_LINES_IN_SET; i++)
+        {
+            if(least_recently_updated[set_address][i] > max)
+            {
+                max =  least_recently_updated[set_address][i];
+                max_index = i;
+            }
+
+        }
+        return max_index;
     }
 
     void execute()
@@ -176,9 +225,9 @@ private:
             Function f = Port_Func.read();
             int addr   = Port_Addr.read();
 
-            u_int8_t byte_in_line = addr & bit_mask_byte_in_line;
-            u_int16_t set_address = addr & bit_mask_set_address;
-            u_int16_t tag         = addr & bit_mask_tag;
+            int byte_in_line = addr & bit_mask_byte_in_line;       // Obtaining value for bits 0 - 4, no shifting required
+            int set_address  = (addr & bit_mask_set_address) >> 5; // Shifting to right to obtain value for bits 5  - 11
+            int tag          = (addr & bit_mask_tag) >> 12;        // Shifting to right to obtain value for bits 12 - 31
 
             int data   = 0;
             if (f == FUNC_WRITE)
@@ -191,12 +240,25 @@ private:
                 cout << sc_time_stamp() << ": MEM received read" << endl;
             }
 
-            u_int8_t set_index = set_address % CACHE_NUMBER_OF_SETS;
-
-            cout << "Set index: " << set_index << '\n';
+            wait(99);
 
             if (f == FUNC_READ)
             {
+                int line_in_set_index = get_index_of_line_in_set(set_address, tag);
+                if(line_in_set_index == -1)
+                {
+                    stats_readmiss(0);
+                    //simulate read from memory and store in cache
+                    int line_index = get_lru_line(set_address);
+                    tags[set_address][line_index] = tag;
+                    cache[set_address][line_index * CACHE_LINE_SIZE_BYTES + byte_in_line] = rand() % 1000 + 1;
+                }
+                else
+                {
+                    update_lru(set_address, line_in_set_index);
+                    stats_readhit(0);
+                }
+                
                 Port_Data.write( 0 );
                 Port_Done.write( RET_READ_DONE );
                 wait();
