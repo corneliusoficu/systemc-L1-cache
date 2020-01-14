@@ -75,7 +75,7 @@ private:
         for(int i = 0; i < CACHE_NUMBER_OF_SETS; i++)
         {
             least_recently_updated[i] = new int[CACHE_NUMBER_OF_LINES_IN_SET];
-            cache[i]                  = new int [CACHE_NUMBER_OF_LINES_IN_SET * CACHE_LINE_SIZE_BYTES];
+            cache[i]                  = new int[CACHE_NUMBER_OF_LINES_IN_SET * CACHE_LINE_SIZE_BYTES];
             tags[i]                   = new int[CACHE_NUMBER_OF_LINES_IN_SET];
 
             for(int j = 0; j < CACHE_NUMBER_OF_LINES_IN_SET; j++)
