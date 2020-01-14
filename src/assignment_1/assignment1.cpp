@@ -172,6 +172,7 @@ private:
             stats_writemiss(0);
             line_in_set_index = get_lru_line(set_address);
             tags[set_address][line_in_set_index] = tag;
+            //Simulate write in memory 
             wait(99);
         }
         else
@@ -194,19 +195,19 @@ private:
             Function f = Port_Func.read();
             int addr   = Port_Addr.read();
 
-            int byte_in_line = addr & bit_mask_byte_in_line;       // Obtaining value for bits 0 - 4, no shifting required
+            int byte_in_line = (addr & bit_mask_byte_in_line);       // Obtaining value for bits 0 - 4, no shifting required
             int set_address  = (addr & bit_mask_set_address) >> 5; // Shifting to right to obtain value for bits 5  - 11
             int tag          = (addr & bit_mask_tag) >> 12;        // Shifting to right to obtain value for bits 12 - 31
 
             if (f == FUNC_WRITE)
             {
-                cout << sc_time_stamp() << ": MEM received write" << endl;
+                cout << sc_time_stamp() << ": Cache received write" << endl;
                 int data = Port_Data.read().to_int();
                 handle_cache_write(addr, set_address, tag, byte_in_line, data);
             }
             else
             {
-                cout << sc_time_stamp() << ": MEM received read" << endl;
+                cout << sc_time_stamp() << ": Cache received read" << endl;
                 handle_cache_read(set_address, tag, byte_in_line);
             }
         }   
