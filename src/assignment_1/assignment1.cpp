@@ -56,6 +56,16 @@ public:
         cout << bit_mask_byte_in_line << ' ' << bit_mask_set_address << ' ' << bit_mask_tag << '\n';
     }
 
+    ~Cache() 
+    {
+        for(int index = 0; index < CACHE_NUMBER_OF_SETS; index++)
+        {
+            delete[] least_recently_updated[index];
+            delete[] cache[index];
+            delete[] tags[index];
+        }   
+    }
+
 private:
     
     int **cache;
@@ -109,7 +119,7 @@ private:
 
     void update_lru(int set_address, int line_in_set_index)
     {
-        for(int i = 0; i < CACHE_NUMBER_OF_SETS; i++)
+        for(int i = 0; i < CACHE_NUMBER_OF_LINES_IN_SET; i++)
         {
             if(least_recently_updated[set_address][i] < least_recently_updated[set_address][line_in_set_index])
             {
